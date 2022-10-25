@@ -1,0 +1,1736 @@
+(function($) {
+    Drupal.behaviors.contactMap = {
+
+        attach: function(context, settings) {
+            if (context == document) {
+                var noImagePath = "/sites/braccoimaging.com/files/contact-logo.png";
+                var isPanelOpen = false;
+                var directionsDisplay /*, autocompleteA, autocompleteB*/, googlemap, mapData, geocoder, markerDirectionA, markerDirectionB, showGeolocation;
+                var markersList = new Array();
+                var selectdContact = 'none';
+                var currentCountry = '';
+                var braccoImagingIndex = 56;
+                //$('#sidebar').jScrollPane();
+                var filters = ["headquarters", "commercial-presence", "rd-center", "industrial-footprint"];
+                $("#filter input").each(function(){$(this).prop('checked', true)});
+                /** gestione geolocalizzazione su chrome */
+                showGeolocation = true;
+                try {
+                    var isChrome = /Chrome/.test(navigator.userAgent) && /Google Inc/.test(navigator.vendor);
+                    if(isChrome) {
+                        if(window['PROTOCOL'] && window['PROTOCOL'] == 'https:') {
+                            showGeolocation = true;
+                        } else {
+                            showGeolocation = false;
+                        }
+                    }
+                } catch (e) {
+                    showGeolocation = true;
+                }
+
+            $("input[name='filter-contact']").click(function(){
+                    filters = [];
+                    $("input[name='filter-contact']").each(function(){
+                            $that = $(this);
+                            if ($that.is(':checked')) {
+                            filters.push($that.val());
+                            }
+                    });
+                    filterResults();
+
+            })
+
+            $('#sidebar').jScrollPane({
+                    autoReinitialise : true,
+                    hideFocus : true,
+                    verticalDragMinHeight : 50,
+                    verticalDragMaxHeight : 150,
+                    contentWidth: 0
+                });
+                $("#toggle_result").on('click', function() {
+                    if (isPanelOpen) {
+                        closePanel();
+                        isPanelOpen = false;
+                    } else {
+                        openPanel();
+                        isPanelOpen = true;
+                    }
+                });
+                // ricerca indirizzo
+                $("form[name=location-address]").submit(function () {
+                    // submit solo se non provengo dalla Cina
+                    searchDatabyLocation();
+                    return false;
+                });
+
+                // eliminazione indirizzo utente
+                $("#cancSAddr_t").click(function () {
+                    $("#sAddr").val('');
+                    $('#cancSAddr_t').blur();
+
+                    if ( $.browser.msie ) {
+                        $('#sAddr').focus();
+                        $('#enter_location-input').blur();
+                    }
+                    // eliminaiamo il percorso da mappa
+                    clearRoute();
+                    $('#directions_list').html('');
+                    $('#printDir').css('display', 'none');
+                    return false;
+                });
+                // eliminazione indirizzo utente
+                $("#cancDAddr_t").click(function () {
+                    $("#dAddr").val('');
+                    $('#cancDAddr_t').blur();
+
+                    if ( $.browser.msie ) {
+                        $('#dAddr').focus();
+                        $('#googlemap').focus();
+                    }
+                    // eliminaiamo il percorso da mappa
+                    clearRoute();
+                    $('#directions_list').html('');
+                    $('#printDir').css('display', 'none');
+                    selectdContact = 'none';
+                    return false;
+                });
+
+
+                $("#get_directions").on("click", getDirections);
+
+                //$("#printDir").on("click", printDirections());
+
+                // eliminazione indirizzo utente
+                $("#cancAddr").click(function () {
+                    $('#enter_location-input').val('');
+                    $('#cancAddr').blur();
+
+                    if ( $.browser.msie ) {
+                        $('#enter_location-input').focus();
+                        $('#enter_location-input').blur();
+                    }
+                    // eliminiamo il marker da mappa (se presente)
+                    markerAddress.setAnimation(null);
+                    markerAddress.setMap(null);
+
+                    // aggiorniamo la lista titoli, il nuovo ordianmento è per bound e
+                    // non per indirizzo
+                    /* TODO
+                    filterListResult();
+                    */
+                    // testo descrittivo "hai cercato:"
+                    $('#wSearch').text($('#filter-active').text());
+
+                    // cancello dati di stampa
+                    /* TODO
+                    deleteToPrintResults(PRINT_PARAM.POINT);
+                    */
+                    return false;
+                });
+
+                $("#directions_container .if-bt-close").on("click", closeDirections);
+
+                    // verifichiamo se il browser supporta la funzionalità di individuazione
+                // della posizone utente
+                if ( navigator.geolocation && showGeolocation ) {
+
+                    // gestione funzione "use my positon"
+                    $('#my_position').click(function () {
+                        navigator.geolocation.getCurrentPosition(function ( position ) {
+                            var latlng = new google.maps.LatLng(position.coords.latitude, position.coords.longitude);
+
+
+                                // reverse geocoding indirizzo
+                                geocoder.geocode({
+                                    'latLng' : latlng
+                                }, function ( results, status ) {
+                                    if ( status == google.maps.GeocoderStatus.OK ) {
+                                        var place = results[0];
+                                        var location = place.geometry.location;
+                                        // aggiorno a mostro posizione su mappa del marker indirizzo
+                                        markerAddress.setMap(null);
+                                        // rinizializzo marker per evitare problemi con l'animazione
+                                        markerAddress = new google.maps.Marker();
+                                        markerAddress.setPosition(place.geometry.location);
+                                        markerAddress.setTitle(place.formatted_address);
+                                        markerAddress.setMap(googlemap);
+                                        // aggiorniamo il campo contenente l'indirizzo
+                                        // utente
+                                        $('#enter_location-input').val(place.formatted_address);
+                                        // aggiorniamo il campo indirizzo di partenza per il
+                                        // calcolo percorso
+                                        $("#sAddr").val(place.formatted_address);
+
+                                        closeAllInfowindows();
+
+                                        /*
+                                        // salvo dati di stampa
+                                        pushToPrintResults(PRINT_PARAM.POINT, place.geometry.location.toUrlValue());
+
+                                        // chudo ballooon
+                                        prjFerrari.closeAllInfowindow();
+                                        */
+
+                                        // ricerca dei contenuti su mappa in base ai criteri
+                                        // selezionati dall'utente
+                                        var point = {
+                                            lat : location.lat(),
+                                            lng : location.lng()
+                                        };
+                                        /*
+                                        searchData({
+                                            point : point,
+                                            maxResult : 3
+                                        }, false, place);
+                                        */
+                                        var distances = find_closest_markers(point);
+                                        var nearestMarkers = [];
+                                        for( i=0;i<3; i++ ) {
+                                            nearestMarkers.push(markersList[distances[i].marker])
+                                        }
+                                        nearestMarkers.push({latitude: point.lat, longitude: point.lng});
+                                        var boundaries = _getBoundaries(nearestMarkers);
+                                        var    latitudeValue = (boundaries.N + boundaries.S) / 2;
+                                        var    longitudeValue = (boundaries.E + boundaries.W) / 2;
+                                        var    zoomLevel = _autoZoom(boundaries, $("#map"));
+                                        //googlemap.fitBounds(boundaries);
+                                        googlemap.setCenter({lat: latitudeValue, lng: longitudeValue});
+                                        googlemap.setZoom(zoomLevel);
+                                        if (!isPanelOpen) {
+                                            setTimeout(openPanel(), 600);
+                                        }
+
+                                    } else {
+                                        /* TODO
+                                        handleMessage(LABEL['locNotFind']);
+                                        */
+                                    }
+                                });
+
+                        }, function ( error ) {
+                        /* TODO
+                        handleMessage(LABEL['locNotFind']);
+                        */
+                        }, {
+                            maximumAge : 600000,
+                            timeout : 10000
+                        });
+                    });
+
+                } else {
+                    // nascondiamo la funzione "use my positon"
+                    $('#my_position, #or').css('display', 'none');
+                }
+
+
+                //                var braccoimagingMaps = JSON.parse(imagingMaps);
+                //var braccoimagingMaps = imagingMaps;
+
+                //var map;
+
+                if (typeof(Drupal.settings.braccoimagingMaps) != 'undefined') {
+                    //markersList = new Array();
+                    var resultsHtml = "";
+                    for (var i in Drupal.settings.braccoimagingMaps) {
+
+                        var imagePath = (Drupal.settings.braccoimagingMaps[i].image != '') ? Drupal.settings.braccoimagingMaps[i].image : noImagePath;
+
+                        var contactTypes = Drupal.settings.braccoimagingMaps[i].contact_types;
+
+                        var typesHtml = "";
+
+                        if (Drupal.settings.braccoimagingMaps[i].id == 567) {
+
+                            braccoImagingIndex = i;
+
+                        };
+
+                        if (contactTypes && contactTypes.length > 0) {
+                            for (var j = 0; j<contactTypes.length; j++) {
+                                var taxonomy_term = contactTypes[j].name;
+                                var iconPath = contactTypes[j].icon;
+                            // var typeClass = taxonomy_term.replace(/[^A-Z0-9]/ig, "-");
+                                typesHtml += '<li style="background: url(' + iconPath + ');">' + taxonomy_term + '</li>';
+                                //typesHtml += '<li class="' + typeClass.toLowerCase() + '">' + taxonomy_term + '</li>';
+
+                            }
+                        }
+
+                        //var iconPath = (contactType != '') ? contactIcons[contactType] : '';
+
+                        var infoHtml = '<div id="infoHtml_' + i + '" class="info-window">  <div id="iw-container"> <div class="if-left"><div class="if-image"><img src="' + imagePath + '"  alt="site" /></div><div onclick="window.setDestinationAddress(' + i + ');" class="if-bt-directions">get directions </div><div class="if-bt-print">print</div></div>  <div class="if-right"> <div class="if-bt-close"> <img src="/sites/braccoimaging.com/themes/braccoimaging/images/dealer/chiudi.png"  alt="close" /></div><div class="if-contact-icon"><ul>' + typesHtml + '</ul></div><div class="if-contact-title">'+ Drupal.settings.braccoimagingMaps[i].title + ' </div><div class="if-contact-info">' + Drupal.settings.braccoimagingMaps[i].place;
+
+                        resultsHtml += '<div id="result_' + i + '" class="slide"><div class="if-contact-icon"><ul>' + typesHtml + '</ul></div><div class="if-contact-title">' + Drupal.settings.braccoimagingMaps[i].title + ' </div><div class="if-contact-info">' + Drupal.settings.braccoimagingMaps[i].place;
+
+                        if (Drupal.settings.braccoimagingMaps[i].phone != '') {
+                            infoHtml += '<p>'+ Drupal.settings.braccoimagingMaps[i].phone;
+                            resultsHtml += '<p>' + Drupal.settings.braccoimagingMaps[i].phone;
+                        }
+
+                        if (Drupal.settings.braccoimagingMaps[i].fax != '') {
+                            infoHtml += '<br>' + Drupal.settings.braccoimagingMaps[i].fax;
+                            resultsHtml += '<br>' + Drupal.settings.braccoimagingMaps[i].fax;
+                        }
+
+                        if (Drupal.settings.braccoimagingMaps[i].email != '') {
+                            infoHtml += '<br>' + Drupal.settings.braccoimagingMaps[i].email +'</p>';
+                            resultsHtml += '<br>' + Drupal.settings.braccoimagingMaps[i].email;
+                        }
+
+                        if (Drupal.settings.braccoimagingMaps[i].website != '') {
+                            resultsHtml += '<br>' + Drupal.settings.braccoimagingMaps[i].website +'</p>';
+                        infoHtml += '</div><div class="if-contact-web external-link">' + Drupal.settings.braccoimagingMaps[i].website + '</div>' ;
+
+                        }
+
+                        resultsHtml += '</div> <div class="if-image"><img src="' + imagePath + '" alt="site" /> </div><div class="if-bt-directions" onclick="window.setDestinationAddress(' + i + ');">get directions</div></div>';
+                        infoHtml += '</div>';
+
+                        markersList[markersList.length] = {
+                            latitude: parseFloat(Drupal.settings.braccoimagingMaps[i].latitude),
+                            longitude: parseFloat(Drupal.settings.braccoimagingMaps[i].longitude),
+                            //                              address : Drupal.settings.braccoimagingMaps[i].place,
+                            html: infoHtml,
+                            id: i
+                        }
+                    }
+                    //console.log(resultsHtml);
+                    $("#results_list").html(resultsHtml);
+                    var mapLocalContact = $("#map");
+                    var markersLocal = new Array();
+                    for (var i in Drupal.settings.braccoimagingLocalMaps) {
+                        markersLocal[markersLocal.length] = {
+                            latitude: parseFloat(Drupal.settings.braccoimagingLocalMaps[i].latitude),
+                            longitude: parseFloat(Drupal.settings.braccoimagingLocalMaps[i].longitude)
+                        }
+                    }
+                    if (markersList.length) {
+                        gmapMulti(mapLocalContact, markersList, markersLocal);
+                        geocoder = new google.maps.Geocoder();
+
+
+                        // autocompelte indirizzo
+                        var autocomplete = new google.maps.places.Autocomplete($('#enter_location-input').get(0));
+                        autocomplete.bindTo('bounds', googlemap);
+                        autocomplete.setTypes([ 'geocode' ]);
+                        /* TODO
+                        // ricerca dati su selezione opzione autocomplete
+                        google.maps.event.addListener(autocomplete, 'place_changed', function () {
+                            var place = autocomplete.getPlace();
+                            if ( place.geometry ) {
+                                // cencello percorso
+                                if ( $("#sAddr").val() != place.formatted_address )
+                                    clearRoute();
+
+                                // aggiorniamo il campo indirizzo di partenza per il calcolo
+                                // percorso
+                                $("#sAddr").val(place.formatted_address);
+
+                                // verifico se si è ricercata una nazione
+                                var country = isCountry(place);
+                                if ( country ) {// setto vista country
+                                    setCountryView(country, place);
+                                } else {
+                                    // ricerca dei contenuti su mappa in base ai criteri
+                                    // selezionati dall'utente
+                                    var location = place.geometry.location;
+                                    var point = {
+                                        lat : location.lat(),
+                                        lng : location.lng()
+                                    };
+                                    searchData({
+                                        point : point,
+                                        maxResult : 3
+                                    }, false, place);
+                                }
+                            }
+                        });
+                        */
+                        // all'autocomplete dell'indirizzo ha una larghezza maggiore
+                        /* TODO ?
+
+                        $('#enter_location-input').focus(function() {
+                            $('.pac-container').addClass('fix-width');
+                        });
+                        $('#enter_location-input').blur(function() {
+                            $('.pac-container').removeClass('fix-width');
+                        });
+
+                        */
+
+                        // autocompelte percorso A
+                        var autocompleteA = new google.maps.places.Autocomplete($('#sAddr').get(0));
+                        autocompleteA.bindTo('bounds', googlemap);
+                        autocompleteA.setTypes([ 'geocode' ]);
+                        google.maps.event.addListener(autocompleteA, 'place_changed', function () {
+                            clearRoute();
+                            $('#directions_list').html('');
+                            $('#printableDirections').html('');
+                            $('#printDir').css('display', 'none');
+
+                        });
+                        // autocompelte percorso B
+                        var autocompleteB = new google.maps.places.Autocomplete($('#dAddr').get(0));
+                        autocompleteB.bindTo('bounds', googlemap);
+                        autocompleteB.setTypes([ 'geocode' ]);
+                        google.maps.event.addListener(autocompleteB, 'place_changed', function () {
+                            clearRoute();
+                            $('#directions_list').html('');
+                            $('#printableDirections').html('');
+                            $('#printDir').css('display', 'none');
+                            selectdContact = 'none';
+                        });
+
+
+                        // marker indirizzo
+                        /* TODO
+                        var markerImage = { "url": "img/map/mypos.png", "size": new google.maps.Size(33, 34) };
+                        var myposShadow = { "url": "img/map/mypos_shadow.png", "size": new google.maps.Size(33, 34), "anchor": new google.maps.Point(10, 30) };
+                        markerAddressOpt = {
+                            icon : markerImage,
+                            shadow : myposShadow
+                        };
+                        markerAddress = new google.maps.Marker(markerAddressOpt);
+                        */
+                        markerAddress = new google.maps.Marker();
+
+                        /* TODO
+                        // pin direction A
+                        markerImage = { "url": "img/map/from.png", "size": new google.maps.Size(43, 35), "anchor": new google.maps.Point(39, 20) };
+                        var directionShadow = { "url": "img/map/dir_shadow.png", "size": new google.maps.Size(43, 35), "anchor": new google.maps.Point(39, 20) };
+                        markerDirectionA = new google.maps.Marker({
+                            animation : (DISABLE_ANIMATION ? null:google.maps.Animation.DROP),
+                            icon : markerImage,
+                            shadow : directionShadow
+                        });
+
+                        // pin direction B
+                        markerImage = { "url": "img/map/to.png", "size": new google.maps.Size(43, 35), "anchor": new google.maps.Point(39, 20) };
+                        markerDirectionB = new google.maps.Marker({
+                            animation : (DISABLE_ANIMATION ? null:google.maps.Animation.DROP),
+                            icon : markerImage,
+                            shadow : directionShadow
+                        });
+                        */
+                        markerDirectionA = new google.maps.Marker();
+                        markerDirectionB = new google.maps.Marker();
+
+                        directionsDisplay = new google.maps.DirectionsRenderer({
+                            suppressMarkers : true,
+                            polylineOptions : {
+                                strokeColor : '#FF0000',
+                                strokeOpacity : 0.45,
+                                strokeWeight : 5
+                            }
+                        });
+                        directionsDisplay.setPanel(null);
+
+                        /*
+                        //googlemap =
+                        // autocomplete percorso A
+                        autocompleteA = new google.maps.places.Autocomplete($('#sAddr').get(0));
+                        autocompleteA.bindTo('bounds', googlemap);
+                        autocompleteA.setTypes(['geocode']);
+                        // autocomplete percorso B
+                        autocompleteB = new google.maps.places.Autocomplete($('#dAddr').get(0));
+                        autocompleteB.bindTo('bounds', googlemap);
+                        autocompleteB.setTypes(['geocode']);
+                        */
+                    }
+                } else {
+                    jQuery(".map").each(function() {
+                        var nid = $(this).attr('rel');
+                        var latitude = $('#lat-' + nid).val();
+                        var longitude = $('#lng-' + nid).val();
+                        var address = $('#contact-address').html();
+                        var title = $('.info').text();
+                        var phone = $('.ph').html();
+                        //                                  gmapSingle($(this) , {lat:latitude, lng:longitude}, address, title, phone);
+                    })
+                }
+
+                function gmapMulti($map, markersDefined, markersLocal) {
+                    var zoomLevel = 'fit';
+                    var latitudeValue = 'fit';
+                    var longitudeValue = 'fit';
+                    if (markersDefined.length == 1) {
+                        latitudeValue = markersDefined[0].latitude;
+                        longitudeValue = markersDefined[0].longitude;
+                        zoomLevel = 5;
+                    }
+                    if (markersLocal.length == 1) {
+                        latitudeValue = markersLocal[0].latitude;
+                        longitudeValue = markersLocal[0].longitude;
+                        zoomLevel = 5;
+                    } else if (markersLocal.length > 1) {
+                        var boundaries = _getBoundaries(markersLocal);
+                        latitudeValue = (boundaries.N + boundaries.S) / 2;
+                        longitudeValue = (boundaries.E + boundaries.W) / 2;
+                        zoomLevel = _autoZoom(boundaries, $map);
+                    }
+
+                    var boundaries = _getBoundaries(markersDefined);
+                    latitudeValue = (boundaries.N + boundaries.S) / 2;
+                    longitudeValue = (boundaries.E + boundaries.W) / 2;
+                    zoomLevel = _autoZoom(boundaries, $map);
+
+                    var mcOptions = {
+                        styles: [{
+                            height: 56,
+                            url: "/sites/braccoimaging.com/themes/braccoimaging/images/dealer/m1.png",
+                            width: 56,
+                            textColor: '#ffffff'
+                        }, {
+                            height: 56,
+                            url: "/sites/braccoimaging.com/themes/braccoimaging/images/dealer/m2.png",
+                            width: 56,
+                            textColor: '#ffffff'
+                        }, {
+                            height: 66,
+                            url: "/sites/braccoimaging.com/themes/braccoimaging/images/dealer/m3.png",
+                            width: 66,
+                            textColor: '#ffffff'
+                        }, {
+                            height: 78,
+                            url: "/sites/braccoimaging.com/themes/braccoimaging/images/dealer/m4.png",
+                            width: 78,
+                            textColor: '#ffffff'
+                        }, {
+                            height: 90,
+                            url: "/sites/braccoimaging.com/themes/braccoimaging/images/dealer/m5.png",
+                            width: 90,
+                            textColor: '#ffffff'
+                        }],
+                        ignoreHidden: true
+                    };
+
+                    var clustering = {
+                        enabled: true,
+                        mcOptions: mcOptions,
+                    }
+                    var iconObj = {
+                        image: "/sites/braccoimaging.com/themes/braccoimaging/images/dealer/bracco_marker.png",
+                        iconsize: [44, 61],
+                        infowindowanchor: [0, 10]
+                    };
+                    var opts = {
+                        onComplete: function() {
+                            //updateResults();
+                            //var data = jQuery("#map").data('gmap');
+                            //var data = mapData;
+                            google.maps.event.addListener(googlemap, 'idle', function() {
+                                updateResults();
+                                mapData.clusterer.repaint();
+                            });
+
+
+
+
+                        },
+                        zoom: zoomLevel, //4, //zoomLevel,
+                        clustering: clustering,
+                        markersAnimation: google.maps.Animation.DROP,
+                        latitude: latitudeValue,
+                        longitude: longitudeValue,
+                        icon: iconObj,
+                        markers: markersDefined,
+                        minZoom: 2/*,
+                        styles: [{
+                            "stylers": [{
+                                "hue": "#007fff"
+                            }, {
+                                "saturation": 89
+                            }]
+                        }, {
+                            "featureType": "water",
+                            "stylers": [{
+                                "color": "#ffffff"
+                            }]
+                        }, {
+                            "featureType": "administrative.country",
+                            "elementType": "labels",
+                            "stylers": [{
+                                "visibility": "off"
+                            }]
+                        }]
+                        */
+
+
+                    };
+
+
+                    //                                var pos = new google.maps.LatLng( latlng.lat,  latlng.lng);
+                    map = $map.gMap(opts);
+                    googlemap = $("#map").data('gmap').gmap;
+                    mapData = $("#map").data('gmap');
+
+                    //updateResults();
+                    /*
+                    google.maps.event.addListener(googlemap, 'idle', function() {
+                                updateResults();
+                            });
+                    */
+                    //console.log(mappa);
+                    //var googlemap = mappa.data('gmap');
+                    //var bounds = googlemap.getBounds();
+                    //console.log(bounds);
+
+                }
+
+                function closeDirections() {
+                    $("#directions_container").fadeOut("slow");
+                    $("#results_list").fadeIn("slow");
+
+                    $('#enter_location-input').val('');
+                    $('#cancAddr').blur();
+
+                    if ( $.browser.msie ) {
+                        $('#enter_location-input').focus();
+                        $('#enter_location-input').blur();
+                    }
+                    $('#wSearch').text($('#filter-active').text());
+                    // eliminiamo il marker da mappa (se presente)
+                    markerAddress.setAnimation(null);
+                    markerAddress.setMap(null);
+
+
+                    $("#sAddr").val('');
+                    $('#cancSAddr_t').blur();
+
+                    if ( $.browser.msie ) {
+                        $('#sAddr').focus();
+                        $('#enter_location-input').blur();
+                    }
+
+                    $("#dAddr").val('');
+                    $('#cancDAddr_t').blur();
+
+                    if ( $.browser.msie ) {
+                        $('#dAddr').focus();
+                        $('#googlemap').focus();
+                    }
+                    // eliminaiamo il percorso da mappa
+                    clearRoute();
+                    $('#directions_list').html('');
+                    return false;
+                }
+
+                function intersect(a, b) {
+                    var t;
+                    if (b.length > a.length) t = b, b = a, a = t; // indexOf to loop over shorter
+                    return a.filter(function (e) {
+                        if (b.indexOf(e) !== -1) return true;
+                    }).filter(function (e, i, c) { // extra step to remove duplicates
+                        return c.indexOf(e) === i;
+                    });
+                }
+
+                function filterResults() {
+                    var data = mapData;
+                    var markers = data.markers;
+
+                    if (typeof(Drupal.settings.braccoimagingMaps) != 'undefined') {
+
+                        for (var i in Drupal.settings.braccoimagingMaps) {
+                            var contactTypes = new Array();
+                            for(var k in Drupal.settings.braccoimagingMaps[i].contact_types) {
+                                contactTypes.push(Drupal.settings.braccoimagingMaps[i].contact_types[k].type);
+                            }
+                            var filteredTypes = intersect(contactTypes, filters);
+                            if (filteredTypes.length > 0) {
+                                markers[i].setVisible(true);
+                                mapData.clusterer.repaint();
+                                updateResults();
+                            } else {
+                                markers[i].setVisible(false);
+                                mapData.clusterer.repaint();
+                                updateResults();
+                            }
+                        }
+
+                    };
+                    //.trim().replace(/[^a-zA-Z0-9 ]/g, "").toLowerCase().replace(/ /g, "-");
+                }
+
+                function updateResults() {
+
+                    //var data = jQuery("#map").data('gmap');
+                    var data = mapData;
+                    var markers = data.markers;
+                    var bounds = data.gmap.getBounds();
+
+                    for (var i = 0; i < markers.length; i++) { // looping through my Markers Collection
+                        //var contactCountry = Drupal.settings.braccoimagingMaps[i].lang.substring(3).toLowerCase();
+
+                        var contactCountry = Drupal.settings.braccoimagingMaps[i].country.toLowerCase();
+
+                        if ((currentCountry.length > 0) && (currentCountry.localeCompare(contactCountry) == 0) && (!jQuery("#result_" + i).is(':first-child'))) {
+                            jQuery("#result_" + i).insertBefore(jQuery("#results_list").children().first());
+                        }
+                        if (bounds.contains(markers[i].position) && markers[i].visible) {
+                            //console.log("Marker"+ i +" - matched");
+                            jQuery("#result_" + i).show();
+                        } else {
+                            jQuery("#result_" + i).hide();
+                        }
+
+                    }
+
+                    if ((currentCountry.length > 0) && (currentCountry.localeCompare("it") == 0) && (!jQuery("#result_" + braccoImagingIndex).is(':first-child'))) {
+
+                        jQuery("#result_" + braccoImagingIndex).insertBefore(jQuery("#results_list").children().first());
+
+                    }
+
+                    var offsetY = jQuery('#sidebar').data('jsp').getContentPositionY();
+                    jQuery('#sidebar').data('jsp').scrollByY(-offsetY);
+                    currentCountry="";
+                }
+
+                function closeAllInfowindows() {
+                    var infoWindows = mapData.infoWindows;
+                    for (var i=0;i<infoWindows.length;i++) {
+                        infoWindows[i].close();
+                    }
+                };
+
+                function gmapSingle($map, latlng, address, title, phone) {
+
+                    var pos = new google.maps.LatLng(latlng.lat, latlng.lng);
+                    $map.gMap({
+                        zoom: 16,
+                        latitude: pos.lat(),
+                        longitude: pos.lng(),
+
+                        icon: {
+                            image: "http://localhost/drupal-test/sites/all/themes/images/bracco_marker.png",
+                            iconsize: [52, 48],
+                            infowindowanchor: [0, 10]
+                        },
+                        markers: [{
+                            //popup: true,
+                            //html: '<b>'+title+'</b>' + '<br>' + address + '<br>' + phone,
+                            latitude: pos.lat(),
+                            longitude: pos.lng()
+                        }],
+                        onComplete: function() {
+                            var data = $map.data('gmap');
+                            var infowindow = new google.maps.InfoWindow({
+                                content: '<div id= "contact-infowindow" class="infowindow"> <b>' + title + '</b>' + '<br>' + address + '<br>' + phone + '</div>'
+                            });
+                            google.maps.event.addListener(
+                                infowindow,
+                                'domready',
+                                function() {
+                                    $('#contact-infowindow').parents('div').first().css({ 'overflow': 'hidden', 'height': 'auto' });
+                                }
+                            );
+
+                            google.maps.event.addListener(data.markers[0], 'click', function() {
+                                infowindow.open(data.gmap, data.markers[0]);
+                            });
+                        }
+                    });
+                }
+
+
+                /**
+                * Elimina il tracciato del percorso da mappa
+                */
+                function clearRoute () {
+                    markerDirectionA.setMap(null);
+                    markerDirectionB.setMap(null);
+                    directionsDisplay.setMap(null);
+
+                    /* TODO
+
+                    // nascondiamo il bottone stampa
+                    $('#printDir').css('display', 'none');
+
+                    // popolazione sezione risultati
+                    $('#directions_list').html('');
+
+                    // scrollbar
+                    // $('#directions_scroll').data('jsp').reinitialise();
+
+                    // cancello parametri di stampa
+                    clearToPrintDirection([ PRINT_PARAM.PV, PRINT_PARAM.PV_ADDR ]);
+
+                    */
+                }
+
+                /**
+                * Ricerca dei dati in base all'indirizzo inserito dall'utente.
+                */
+                function searchDatabyLocation () {
+                    try {
+                        // verifichiamo che sia stato trovata una locazione valida
+                        var address = $('#enter_location-input').val();
+
+                        // controllo validità  indirizzo inserito
+                        if ( address && $.trim(address) != '' && address != $('#enter_location-input').attr('placeholder') ) {
+
+                                geocoder.geocode({
+                                    'address' : address
+                                }, function ( results, status ) {
+                                    try {
+                                        if ( status == google.maps.GeocoderStatus.OK ) {
+                                            var place = results[0];
+                                            var location = place.geometry.location;
+                                            // aggiorno a mostro posizione su mappa del marker indirizzo
+                                            markerAddress.setMap(null);
+                                            // rinizializzo marker per evitare problemi con l'animazione
+                                            markerAddress = new google.maps.Marker();
+                                            markerAddress.setPosition(place.geometry.location);
+                                            markerAddress.setTitle(place.formatted_address);
+                                            markerAddress.setMap(googlemap);
+                                            // aggiorniamo il campo contenente l'indirizzo utente
+                                            $('#enter_location-input').val(place.formatted_address);
+                                            for (var i=0; i < place.address_components.length; i++) {
+                                            for (var j=0; j < place.address_components[i].types.length; j++) {
+                                                if (place.address_components[i].types[j] == "country") {
+                                                var country = place.address_components[i];
+                                                currentCountry = country.short_name.toLowerCase();
+                                                }
+                                            }
+                                            }
+                                            // verifico se si è ricercata una nazione
+                                            var country = isCountry(place);
+                                            if ( country ) {
+                                                // setto vista country
+                                                setCountryView(country, place);
+                                            } else {
+                                                // ricerca dei contenuti su mappa in base ai criteri
+                                                // selezionati dall'utente
+                                                var point = {
+                                                    lat : location.lat(),
+                                                    lng : location.lng()
+                                                };
+                                                /*
+                                                searchData({
+                                                    point : point,
+                                                    maxResult : 3
+                                                }, false, place);
+                                                */
+                                                var distances = find_closest_markers(point);
+                                                var nearestMarkers = [];
+                                                for( i=0;i<3; i++ ) {
+                                                    nearestMarkers.push(markersList[distances[i].marker])
+                                                }
+                                                nearestMarkers.push({latitude: point.lat, longitude: point.lng});
+                                                var boundaries = _getBoundaries(nearestMarkers);
+                                                var    latitudeValue = (boundaries.N + boundaries.S) / 2;
+                                                var    longitudeValue = (boundaries.E + boundaries.W) / 2;
+                                                var    zoomLevel = _autoZoom(boundaries, $("#map"));
+                                                //googlemap.fitBounds(boundaries);
+                                                googlemap.setCenter({lat: latitudeValue, lng: longitudeValue});
+                                                googlemap.setZoom(zoomLevel);
+                                                if (!isPanelOpen) {
+                                                    setTimeout(openPanel(), 600);
+                                                }
+                                                /* TODO
+                                                // salvo dati di stampa
+                                                pushToPrintResults(PRINT_PARAM.POINT, place.geometry.location.toUrlValue());
+                                                */
+                                            }
+
+                                            // cencello percorso
+                                            if ( $("#sAddr").val() != place.formatted_address ) {
+                                                clearRoute();
+                                                $('#directions_list').html('');
+                                                $('#printDir').css('display', 'none');
+                                            }
+
+
+                                            // aggiorniamo il campo indirizzo di partenza per il
+                                            // calcolo percorso
+                                            $("#sAddr").val(place.formatted_address);
+
+                                            mapData.clusterer.repaint();
+
+                                        } else {
+                                            // gestione messaggio di errore
+                                            /* TODO
+                                            parseGeocoderStatus(status);
+                                            */
+                                        }
+                                    } catch (e) {
+                                        // handle exception
+                                        /* TODO
+                                        handleError(e);
+                                        */
+                                    }
+                                });
+                        /* } */
+                        } else {
+                            /* TODO
+                            handleMessage(LABEL['insValidAddr']);
+                            */
+                        }
+
+                    } catch (e) {
+                        // handle exception
+                        /* TODO
+                        handleError(e);
+                        */
+                    }
+                }
+
+                function setDestinationAddress(id) {
+                    geocoder = new google.maps.Geocoder();
+                    var latlng;
+                    var realId = id;
+                    switch (Drupal.settings.braccoimagingMaps[id].id) {
+                      // Lussemburgo / Belgio
+                        case '582':
+                            latlng = {lat: 50.7179009, lng: 4.619299500000011};
+                            realId = 52;
+                            break;
+                      /*  case '30839':
+                            latlng = {lat: 41.3275459, lng: 19.81869819999997};
+                            realId = 2;
+                            break;
+                      */
+                        // Mark srl
+                        case '607':
+                        case '608':
+                        case '572':
+                        case '605':
+                            latlng = {lat: 45.9135195, lng: 13.5947691};
+                            realId = 39;
+                            break;
+                        // Finlandia / Svezia
+                        case '564':
+                            latlng = {lat: 57.7058547, lng: 11.9908316};
+                            realId = 53;
+                            break;
+                        default:
+                            latlng = {lat: parseFloat(Drupal.settings.braccoimagingMaps[id].latitude), lng: parseFloat(Drupal.settings.braccoimagingMaps[id].longitude)};
+                    }
+                    //latlng = {lat: parseFloat(Drupal.settings.braccoimagingMaps[id].latitude), lng: parseFloat(Drupal.settings.braccoimagingMaps[id].longitude)};
+                    geocoder.geocode({'location': latlng}, function(results, status) {
+                    if (status === google.maps.GeocoderStatus.OK) {
+                        var place = results[0];
+                        var location = place.geometry.location;
+                        // cencello percorso
+                        if ( $("#dAddr").val() != place.formatted_address ){
+                            $('#printDir').css('display', 'none');
+                            $('#printableDirections').html('');
+                            clearRoute();
+                            $('#directions_list').html('');
+                            $('#printDir').css('display', 'none');
+                        }
+
+
+                        // aggiorniamo il campo indirizzo di partenza per il
+                        // calcolo percorso
+                        $("#dAddr").val(place.formatted_address);
+
+                        mapData.clusterer.repaint();
+
+                        $("#results_list").fadeOut("fast");
+                        $("#directions_container").fadeIn("fast");
+                        selectdContact = realId;
+                        window.openPanel();
+
+
+                    } else {
+                        window.alert('Geocoder failed due to: ' + status);
+                    }
+                    });
+
+                }
+                window['setDestinationAddress'] = setDestinationAddress;
+
+                function rad(x) {return x*Math.PI/180;}
+                function find_closest_markers( point ) {
+                    var lat = point.lat;
+                    var lng = point.lng;
+                    var R = 6371; // radius of earth in km
+                    var distances = [];
+                    var closest = -1;
+                    for( i=0;i<markersList.length; i++ ) {
+                        var mlat = markersList[i].latitude;
+                        var mlng = markersList[i].longitude;
+                        var dLat  = rad(mlat - lat);
+                        var dLong = rad(mlng - lng);
+                        var a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                            Math.cos(rad(lat)) * Math.cos(rad(lat)) * Math.sin(dLong/2) * Math.sin(dLong/2);
+                        var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                        var d = R * c;
+                        //distances[i] = d;
+                        distances.push({distance: d, marker: i});
+                        /*
+                        if ( closest == -1 || d < distances[closest] ) {
+                            closest = i;
+                        }
+                        */
+                    }
+
+                    distances.sort(function(a,b) {
+                        return a.distance - b.distance;
+                    });
+
+
+                    return distances;
+                }
+
+                function printDirections() {
+
+                if (selectdContact !== 'none') {
+                    var destinationHtml = ""
+                }
+                $('#printableDirections').append($('#directions_list').html());
+                //$('#printableDirections').css('display','');
+                window.print();
+                $('#printableDirections').html('');
+
+                }
+                window['printDirections'] = printDirections;
+
+                function _getBoundaries(markers) {
+                    var i;
+                    var mostN = 1000,
+                        mostE = -1000,
+                        mostW = 1000,
+                        mostS = -1000;
+                    if (markers) {
+                        for (i = 0; i < markers.length; i += 1) {
+                            if (!markers[i].latitude || !markers[i].longitude) continue;
+
+                            if (mostN > markers[i].latitude) { mostN = markers[i].latitude; }
+                            if (mostE < markers[i].longitude) { mostE = markers[i].longitude; }
+                            if (mostW > markers[i].longitude) { mostW = markers[i].longitude; }
+                            if (mostS < markers[i].latitude) { mostS = markers[i].latitude; }
+                        }
+                        _boundaries = { N: mostN, E: mostE, W: mostW, S: mostS };
+                    }
+
+                    if (mostN == -1000) methods._boundaries = { N: 0, E: 0, W: 0, S: 0 };
+
+                    return _boundaries;
+                }
+
+                function _autoZoom(boundaries, map) {
+                    var baseScale = 39135.758482;
+                    resX = (boundaries.E - boundaries.W) * 111000 / map.width();
+                    resY = (boundaries.S - boundaries.N) * 111000 / map.height();
+
+                    for (i = 2; i < 20; i += 1) {
+                        if (resX > baseScale || resY > baseScale) {
+                            break;
+                        }
+                        baseScale = baseScale / 2;
+                    }
+                    return i - 2;
+                }
+
+                function openPanel() {
+
+                    //var map = $("#map").data('gmap').gmap;
+                    var map = googlemap;
+                    var center = map.getCenter();
+                    var bounds = false;
+                    $("#sidebar").show();
+                    $("#map").animate({
+                        width: "650px"
+                    }, {
+                        duration: 'slow',
+                        queue: false,
+                        step: function() {
+                            google.maps.event.trigger(map, 'resize');
+
+                            if (!bounds)
+                                map.setCenter(center);
+                            else
+                                map.fitBounds(bounds);
+                            /*
+                            // chiamo evenutalmente callback
+                            if ( step ) {
+                                step.apply(null, []);
+                            }
+                            */
+                        },
+                        complete: function() {
+
+
+                            google.maps.event.trigger(map, 'resize');
+                            isPanelOpen = true;
+                            $("#toggle_result").removeClass("bar_open");
+                            $("#toggle_result").addClass("bar_close");
+                            if (!bounds)
+                                map.setCenter(center);
+                            else
+                                map.fitBounds(bounds);
+                            /*
+                            // chiamo evenutalmente callback
+                            if ( complete ) {
+                                complete.apply(null, []);
+                            }
+                            */
+                        }
+                    });
+
+                    $("#sidebar").animate({
+                        width: '280px',
+                        duration: 'slow',
+                        queue: false
+                    });
+                    $("#toggle_result").animate({
+                        left: '290px',
+                        duration: 'slow',
+                        queue: false
+                    });
+
+                }
+
+                window['openPanel'] = openPanel;
+
+                function closePanel() {
+
+                    //var map = $("#map").data('gmap').gmap;
+                    var map = googlemap;
+                    var center = map.getCenter();
+                    var bounds = false;
+                    $("#sidebar").animate({
+                        width: '0px',
+                        duration: 'slow',
+                        queue: false
+                    });
+                    $("#toggle_result").animate({
+                        left: '0px',
+                        duration: 'slow',
+                        queue: false
+                    });
+                    $("#map").animate({
+                        width: "940px"
+                    }, {
+                        duration: 'slow',
+                        queue: false,
+                        step: function() {
+                            google.maps.event.trigger(map, 'resize');
+
+                            if (!bounds)
+                                map.setCenter(center);
+                            else
+                                map.fitBounds(bounds);
+
+                        },
+                        complete: function() {
+
+
+                            google.maps.event.trigger(map, 'resize');
+                            isPanelOpen = false;
+                            $("#toggle_result").removeClass("bar_close");
+                            $("#toggle_result").addClass("bar_open");
+                            if (!bounds)
+                                map.setCenter(center);
+                            else
+                                map.fitBounds(bounds);
+
+                        }
+                    });
+
+                }
+
+                /**
+                * Indica se il valore di ritorno della geocodifica indica una ricerca per
+                * nazione
+                *
+                * @returns codice nazione se ho ricercato una nazione, altrimenti null
+                */
+                function isCountry ( place ) {
+                    // indica se si è geocodificata una nazione
+                    var bCountry = false;
+                    var shortCountry = null;
+
+                    var COUNTRY_TYPE = [ "country", "political" ];
+
+                    if ( place && place.address_components && place.address_components.length == 1 ) {
+                        var typePlace = place.address_components[0].types;
+                        var toFound = COUNTRY_TYPE.length;
+
+                        // cerco se il type corrisponde
+                        for ( var i = 0; i < typePlace.length; i ++ ) {
+                            for ( var j = 0; j < COUNTRY_TYPE.length; j ++ ) {
+                                if ( typePlace[i] == COUNTRY_TYPE[j] ) {
+                                    toFound --;
+                                    break;
+                                }
+                            }
+                        }
+
+                        // se ho trovato il tipo corretto
+                        if ( toFound == 0 ) {
+                            shortCountry = place.address_components[0]['short_name'];
+                            bCountry = true;
+                        }
+                    }
+
+                    return (bCountry ? shortCountry : null);
+                }
+
+                /**
+                * Setta la visualizzazione del country ricercato
+                *
+                * @param country
+                * @param place
+                */
+                function setCountryView ( country, place ) {
+                    // eliminiamo il marker da mappa (se presente)
+                    markerAddress.setAnimation(null);
+                    markerAddress.setMap(null);
+
+                    // cancello dati di stampa
+                    /* TODO
+                    deleteToPrintResults(PRINT_PARAM.POINT);
+                    */
+                    // effettuo solamente lo zoom
+                    var bounds = place.geometry.viewport;
+                    /*
+                    // se definito bounds custom
+                    if ( COUNTRY_BOUNDS[country] ) {
+                        // viewport personalizzata
+                        var tmp = COUNTRY_BOUNDS[country].split(',');
+                        bounds = new google.maps.LatLngBounds(new google.maps.LatLng(tmp[0], tmp[1]), new google.maps.LatLng(tmp[2], tmp[3]));
+                    }
+                    */
+                    if ( bounds ) {
+                        googlemap.fitBounds(bounds);
+                    } else {
+                        googlemap.setCenter(place.geometry.location);
+                    }
+
+                    // FIX refresh clusterer
+                    mapData.clusterer.repaint();
+                    if (!isPanelOpen) {
+                        setTimeout(openPanel(), 600);
+                    }
+                    // chiudo eventuale streetview aperto
+                    /* TODO
+                    hideStreetView();
+                    */
+                }
+
+                function getDirections() {
+                    //googlemap = $("#map").data('gmap').gmap;
+
+
+                // $("#get_directions").on("click", function() {
+
+                        // controllo validità indirizzo inserito
+                        var start = $("#sAddr").val();
+                        /* TODO: validazione
+                        if ( $.trim(start) == '' ) {
+                            handleMessage(LABEL['insSaddr']);
+                            return;
+                        }*/
+                        var end = $("#dAddr").val();
+                        /* TODO: validazione
+                        if ( $.trim(end) == '' ) {
+                            handleMessage(LABEL['insDaddr']);
+                            return;
+                        }
+                        */
+                        if(directionsDisplay != null) {
+                            directionsDisplay.setMap(null);
+                            directionsDisplay = null;
+                        }
+
+                        directionsService = new google.maps.DirectionsService,
+                            directionsDisplay = new google.maps.DirectionsRenderer({
+                                map: googlemap,
+                                polylineOptions: {
+                                strokeColor: "red"
+                                },
+                                suppressMarkers: true
+                            });
+
+                        //directionDisplay.setMap(null);
+
+
+                        var request = {
+                            origin: start,
+                            destination: end,
+                            travelMode: google.maps.TravelMode.DRIVING
+                        };
+
+                        directionsService.route(request, function(response, status) {
+                            if (status == google.maps.DirectionsStatus.OK) {
+
+                                closeAllInfowindows();
+                                directionsDisplay.setDirections(response);
+
+                                var content = [];
+
+
+
+                    // For each route, display summary information.
+                    var route = response.routes[0];
+                    markerAddress.setAnimation(null);
+                    markerAddress.setMap(null);
+
+                    for ( var i = 0; i < route.legs.length; i ++ ) {
+                            var legs = route.legs[i];
+
+                            // pin A
+                            markerDirectionA.setPosition(legs.start_location);
+                            markerDirectionA.setTitle(legs.start_address);
+                            markerDirectionA.setMap(googlemap);
+                            // pin B
+                            /*
+                            markerDirectionB.setPosition(legs.end_location);
+                            markerDirectionB.setTitle(legs.end_address);
+                            markerDirectionB.setMap(googlemap);
+                            */
+                            markerDirectionB.setMap(null);
+                            content.push('<ul class="suggestion_selected">');
+                            content.push('<li id="selected_suggestion1" class="active_selected_suggestion">');
+                            content.push('From: ' + legs.start_address + '</li>');
+                            content.push('<li id="selected_suggestion3" class="active_selected_suggestion">');
+                            if (selectdContact !== 'none') {
+                                content.push('To: ' + Drupal.settings.braccoimagingMaps[selectdContact].title + ' - ' + legs.end_address + '</li>');
+                            } else {
+                            content.push('To: ' + legs.end_address + '</li>');
+                            }
+
+                            // content.push('<li id="selected_suggestion2"></li>');
+                            content.push('</ul>');
+                            content.push('<div id="distance">' + legs.distance.text + ' - ' + legs.duration.text + '</div>');
+                            content.push('<ul id="route">');
+
+                            for ( var k = 0; k < legs.steps.length; k ++ ) {
+                                var step = legs.steps[k];
+                                content.push('<li>');
+                                content.push('<div class="index">' + (k + 1) + '.</div>');
+                                // modifico stringa per evitare che le stringhe troppo
+                                // lunghe non vadano a capo
+                                // content.push('<div class="address">' +
+                                // step.instructions + '</div>');
+                                //var stepString = step.instructions.replace(new RegExp('[^<]/', 'g'), ' / ');
+                                var stepString = step.instructions;
+                                content.push('<div class="address">' + stepString + '</div>');
+                                content.push('<div class="distance">' + step.distance.text + ' </div>');
+                                content.push('<div class="clearfix"></div>');
+                                content.push('</li>');
+                            }
+
+                            content.push('</ol>');
+                            content.push('<ul class="suggestion_selected">');
+                            content.push('<li id="selected_suggestion2" class="active_selected_suggestion">');
+                            content.push(legs.end_address + '</li>');
+                            // content.push('<li id="selected_suggestion2"></li>');
+                            content.push('</ul>');
+                        }
+
+                    // mostriamo il bottone stampa
+                    $('#printDir').css('display', '');
+                    // popolazione sezione risultati
+                    $('#directions_list').html(content.join(''));
+
+                            } else {
+                                window.alert('Directions request failed due to ' + status);
+                            }
+                        });
+                // })
+                }
+
+            }
+        }
+    };
+
+})(jQuery);
+
+
+/*
+[{"featureType":"all","elementType":"all","stylers":[{"visibility":"on"}]},{"featureType":"all","elementType":"geometry","stylers":[{"visibility":"on"}]},{"featureType":"all","elementType":"labels","stylers":[{"visibility":"on"}]},{"featureType":"administrative","elementType":"geometry","stylers":[{"visibility":"on"},{"hue":"#ff0000"}]},{"featureType":"administrative","elementType":"labels.text.fill","stylers":[{"color":"#444444"}]},{"featureType":"administrative.country","elementType":"all","stylers":[{"visibility":"on"}]},{"featureType":"administrative.country","elementType":"geometry","stylers":[{"visibility":"on"}]},{"featureType":"administrative.country","elementType":"labels","stylers":[{"visibility":"on"}]},{"featureType":"administrative.province","elementType":"all","stylers":[{"visibility":"on"}]},{"featureType":"administrative.province","elementType":"geometry","stylers":[{"visibility":"on"}]},{"featureType":"administrative.province","elementType":"labels","stylers":[{"visibility":"on"}]},{"featureType":"administrative.locality","elementType":"all","stylers":[{"visibility":"on"}]},{"featureType":"administrative.locality","elementType":"geometry","stylers":[{"visibility":"on"}]},{"featureType":"administrative.locality","elementType":"labels","stylers":[{"visibility":"on"}]},{"featureType":"administrative.neighborhood","elementType":"all","stylers":[{"visibility":"on"}]},{"featureType":"administrative.neighborhood","elementType":"geometry","stylers":[{"visibility":"on"}]},{"featureType":"administrative.neighborhood","elementType":"geometry.fill","stylers":[{"visibility":"on"}]},{"featureType":"administrative.neighborhood","elementType":"labels","stylers":[{"visibility":"on"}]},{"featureType":"administrative.neighborhood","elementType":"labels.text","stylers":[{"visibility":"on"}]},{"featureType":"administrative.neighborhood","elementType":"labels.text.fill","stylers":[{"visibility":"on"}]},{"featureType":"administrative.land_parcel","elementType":"geometry.stroke","stylers":[{"visibility":"off"}]},{"featureType":"administrative.land_parcel","elementType":"labels","stylers":[{"visibility":"off"}]},{"featureType":"administrative.land_parcel","elementType":"labels.text","stylers":[{"visibility":"off"}]},{"featureType":"administrative.land_parcel","elementType":"labels.text.fill","stylers":[{"visibility":"on"}]},{"featureType":"landscape","elementType":"all","stylers":[{"color":"#f2f2f2"},{"visibility":"on"}]},{"featureType":"landscape.man_made","elementType":"all","stylers":[{"visibility":"on"}]},{"featureType":"landscape.natural","elementType":"all","stylers":[{"visibility":"on"}]},{"featureType":"poi","elementType":"all","stylers":[{"visibility":"on"}]},{"featureType":"poi","elementType":"geometry.fill","stylers":[{"visibility":"simplified"}]},{"featureType":"poi","elementType":"geometry.stroke","stylers":[{"visibility":"on"}]},{"featureType":"poi","elementType":"labels.text","stylers":[{"visibility":"on"}]},{"featureType":"poi.attraction","elementType":"all","stylers":[{"visibility":"on"}]},{"featureType":"poi.attraction","elementType":"geometry","stylers":[{"visibility":"on"}]},{"featureType":"poi.business","elementType":"geometry","stylers":[{"visibility":"on"}]},{"featureType":"poi.business","elementType":"labels","stylers":[{"visibility":"on"}]},{"featureType":"poi.business","elementType":"labels.text","stylers":[{"visibility":"on"}]},{"featureType":"poi.government","elementType":"geometry","stylers":[{"visibility":"on"}]},{"featureType":"poi.government","elementType":"labels","stylers":[{"visibility":"on"}]},{"featureType":"poi.government","elementType":"labels.text","stylers":[{"visibility":"on"}]},{"featureType":"poi.medical","elementType":"all","stylers":[{"visibility":"on"}]},{"featureType":"poi.place_of_worship","elementType":"all","stylers":[{"visibility":"on"}]},{"featureType":"poi.school","elementType":"all","stylers":[{"visibility":"on"}]},{"featureType":"poi.sports_complex","elementType":"all","stylers":[{"visibility":"on"}]},{"featureType":"road","elementType":"all","stylers":[{"saturation":-100},{"lightness":45},{"visibility":"on"}]},{"featureType":"road.highway","elementType":"all","stylers":[{"visibility":"simplified"}]},{"featureType":"road.arterial","elementType":"labels.icon","stylers":[{"visibility":"off"}]},{"featureType":"transit","elementType":"all","stylers":[{"visibility":"on"}]},{"featureType":"transit.station","elementType":"all","stylers":[{"visibility":"on"}]},{"featureType":"transit.station.airport","elementType":"all","stylers":[{"visibility":"on"}]},{"featureType":"transit.station.bus","elementType":"all","stylers":[{"visibility":"on"}]},{"featureType":"water","elementType":"all","stylers":[{"color":"#14b2f2"},{"visibility":"on"}]}]
+*/
+;/**/
+(function ($) {
+  Drupal.behaviors.changeMenuActive = {
+	attach: function (context, settings) {
+		var menu = $('#block-superfish-1');
+		$('li.active,a.active,li.active-trail,a.active-trail',menu).removeClass('active').removeClass('active-trail');
+
+		$('#superfish-1 .tab_menu a:first').addClass('active');
+		if(typeof(Drupal) != 'undefined' && typeof(Drupal.settings) != 'undefined' && typeof(Drupal.settings.braccotrails) != 'undefined' && (typeof(Drupal.settings.braccotrails) == 'object' || typeof(Drupal.settings.braccotrails) == 'array')){
+			for(var id in Drupal.settings.braccotrails){
+				var mlid = Drupal.settings.braccotrails[id];
+
+				var selector = 'li[id^=menu-'+mlid+']';
+				var activeLi = $(selector,menu);
+				activeLi.addClass('active').addClass('active-trail');
+				$('> a',activeLi).addClass('active').addClass('active-trail');
+			}
+		}
+	}
+  };
+  Drupal.behaviors.moveMessagesDiv = {
+	attach: function (context, settings) {
+		$('#block-delta-blocks-messages').insertAfter($('#main-content'));
+		
+    }
+  };
+  Drupal.behaviors.saveBookmarks = {
+    attach: function (context, settings) {
+      $('.preferiti a').addClass('processed').click(function(){
+        if (window.sidebar) { // Mozilla Firefox Bookmark
+          window.sidebar.addPanel(location.href,document.title,"");
+        } else if(window.external) { // IE Favorite
+          window.external.AddFavorite(location.href,document.title); }
+        else if(window.opera && window.print) { // Opera Hotlist
+          this.title=document.title;
+          return true;
+        }
+        return false;
+      });
+    }
+  };
+  Drupal.behaviors.fancybox = {
+    attach: function (context, settings) {
+      if(typeof($.fancybox) == 'function'){
+         $('.lanciomedia a.videolink').each(function(){
+        	 var id = '';
+        	 id = $('.jwplayer-video > div',$(this).next()).attr('id');
+        	 $(this).attr('href', '#'+id);
+        	 $(this).next().remove();
+         });
+         $('.lanciomedia a.videolink').click(function(){
+        	 $(this).addClass('clicked');
+         })
+
+          $('.lanciomedia a:not(.videolink),.lanciomediapage a:not(.videolink)').fancybox({
+          transitionIn : 'elastic',
+          transitionOut : 'elastic',
+          speedIn : 600,
+          speedOut : 200,
+          overlayShow : true,
+          padding : 0,
+          helpers : {
+            media : {}
+          }
+          });
+         
+         $('.lanciomedia a.videolink').fancybox({
+          content : '<div id="mediaspace"></div>',
+          transitionIn : 'elastic',
+          transitionOut : 'elastic',
+          speedIn : 600,
+          speedOut : 200,
+          overlayShow : true,
+          padding : 0,
+          helpers : {
+            media : {}
+          },
+          beforeShow: function() {
+        	  var id = $('.lanciomedia a.videolink.clicked').attr('href').replace("#","");
+              jwplayer('mediaspace').setup(Drupal.settings.jw_player[id]);
+          },
+          afterShow : function (){
+              jwplayer('mediaspace').play();
+          },
+          beforeClose : function (){
+            jwplayer('mediaspace').stop();
+            $('#mediaspace').detach();
+          },
+          afterClose : function (){
+        	  $('.lanciomedia a.clicked').removeClass('clicked');
+          }
+        }); 
+      }
+    }
+  };
+  Drupal.behaviors.gallery = {
+    attach: function (context, settings) {
+      $('.gallery_img').each(function(){
+    	if($(this).parent().hasClass('storia') || $(this).hasClass('foundation')){
+    		return false;
+    	}
+	    $('.prev',this).hide();
+	    if($('#contenitore_gallery').find('a').length == 2){
+	    	$('.next',this).hide();
+	    }
+        $('.prev',this).click(function(){
+          Drupal.galleryPrev('contenitore_gallery',2);
+          if(scatti_gall_img == 0){
+        	  $(this).hide();
+          }
+          $(this).next().show();
+          return false;
+        });
+        $('.next',this).click(function(){
+          Drupal.galleryNext('contenitore_gallery',2);
+          var num_imgs = $('#contenitore_gallery').find('a').length;
+
+          if((scatti_gall_img*2) == num_imgs){
+        	  $(this).hide();
+          }
+          $(this).prev().show();
+          return false;
+        });
+      });
+      if(typeof($.fancybox) == 'function'){
+          $('#contenitore_gallery a.videolink').each(function(){
+         	 var id = '';
+         	 id = $('.jwplayer-video > div',$(this).next()).attr('id');
+         	 $(this).attr('href', '#'+id);
+         	 $(this).next().remove();
+          });
+          $('#contenitore_gallery a').click(function(){
+         	 $(this).addClass('clicked');
+          })
+          
+          $('#contenitore_gallery a:not(.videolink)').fancybox({
+          transitionIn : 'elastic',
+          transitionOut : 'elastic',
+          speedIn : 600,
+          speedOut : 200,
+          overlayShow : true,
+          padding : 0,
+          helpers : {
+            media : {}
+          }
+          });
+          
+          $('#contenitore_gallery a.videolink').fancybox({
+          content : '<div id="mediaspace"></div>',
+          transitionIn : 'elastic',
+          transitionOut : 'elastic',
+          speedIn : 600,
+          speedOut : 200,
+          overlayShow : true,
+          padding : 0,
+          helpers : {
+            media : {}
+          },
+          beforeShow: function() {
+        	  var id = $('.lanciomedia a.videolink.clicked').attr('href').replace("#","");
+              jwplayer('mediaspace').setup(Drupal.settings.jw_player[id]);
+          },
+          afterShow : function (){
+              jwplayer('mediaspace').play();
+          },
+          beforeClose : function (){
+            jwplayer('mediaspace').stop();
+            $('#mediaspace').detach();
+          },
+          afterClose : function (){
+        	  $('.lanciomedia a.videolink.clicked').removeClass('clicked');
+          }
+        }); 
+      }
+    }
+  };
+
+/** GALLERY **/
+var scatti_gall_img = 0;
+
+Drupal.galleryPrev = function(id, elementi)
+{ 
+  var witem = $('#'+id+' div.lanciomedia').eq(0).width();
+
+  if(scatti_gall_img > 0)
+  { scatti_gall_img--;
+    var p = (scatti_gall_img * witem) * (-1);
+    $('#'+id).animate({left:p+"px"}, 500 );
+    
+  }
+}
+
+Drupal.galleryNext = function(id, elementi)
+{
+  var witem = $('#'+id+' div.lanciomedia').eq(0).width();
+  var num_imgs = $('#'+id).find('a').length;
+
+  if(scatti_gall_img < (num_imgs - elementi))
+  { scatti_gall_img++;
+    var p = (scatti_gall_img * witem) * (-1);
+    $('#'+id).animate({left:p+"px"}, 500 );
+    
+  }
+}
+
+
+Drupal.behaviors.superfishPadding = {
+	attach : function(){
+		$('.sf-depth-1 .sf-megamenu').each(function(){
+			var submenu = $(this);
+			var parent = submenu.prev();
+			var parentLeft = parent.offset().left;
+			var parentwidth = parent.width();
+			var width = submenu.width();
+			var menu = submenu.parents('ul:eq(0)');
+			var menuLeft = menu.offset().left;
+			var leftPos = parentLeft-menuLeft-(width/2)-(parentwidth/2);
+			if(leftPos > 0)
+				submenu.css('left',leftPos);
+		});
+//		if(jQuery('#superfish-1 > li.sf-depth-1').length){
+//			Drupal.settaPaddingMenu(580);
+//		}
+	}
+}
+/** Gestisce la larghezza delle singole voci di menu per occupare tutto lo spazio a disposizione **/
+Drupal.settaPaddingMenu = function(max_width)
+{		
+	var tot_space = 810;
+	var space_li = 0;
+
+	if(max_width) tot_space = max_width;
+
+	jQuery('#superfish-1 > li.sf-depth-1').each(function(index) {
+    	space_li += jQuery(this).width() + 15;
+	});
+
+	var padding = (tot_space - space_li) / jQuery('#superfish-1 > li.sf-depth-1').length;
+
+	if(padding > 0){
+		jQuery('#superfish-1 > li.sf-depth-1').each(function(index) {
+	    	jQuery(this).css('width', (jQuery(this).width() + padding) + 'px');
+		});
+	}
+	
+}
+
+Drupal.behaviors.blocksearchcommon = {
+	    attach: function (context, settings) {
+	    	
+	    	$("#search-block-form input[type='text']").focus(function(){
+	    		if($(this).val() == 'Search' || $(this).val() == 'Cerca')
+	    			$(this).val("");
+	    	});
+	    	
+	    
+	    }
+}
+
+  Drupal.behaviors.regionParentHeight = {
+    attach: function (context, settings) {
+      $('#region-sidebar-first').each(function(){
+          if($('#region-content').length){
+            if(($('#region-sidebar-first').height()+$('#region-sidebar-first').offset().top) < $('#region-content').offset().top){
+              $('#region-content').addClass('prefix-2');
+            }
+          }
+      });
+      $('.parent-height').each(function(){
+//        $(this).height($(this).parent().height());
+      });
+    }
+  }; 
+
+	Drupal.behaviors.pressroomTabs = {
+		attach: function (context, settings) {
+			
+			$('.pressprint .view-content .years .inner-years').append($('.pressprint h3.year'));
+			$('.pressprint .view-content .years .inner-years').append('<div class="clear"></div>');
+			$('.pressprint .view-tab-content').html('').append($('.pressprint .pressroom-list:eq(0)').clone());
+			$('.pressprint .view-tab-content .pressroom-list').show();
+			$('.pressprint h3.year:eq(0)').addClass('active');
+			var yearsWidth = 0;
+			var totalYearsWidth = 0;
+			$('.pressprint h3.year').each(function(){
+				totalYearsWidth = totalYearsWidth+$(this).width()+$(this).next().width();
+			});
+			if(totalYearsWidth > 790){
+				$('.pressprint h3.year').each(function(){
+					if($('.pressprint .next-years').length == 0){
+						var w = $(this).width()+$(this).next().width();
+						yearsWidth = yearsWidth+w;
+						if(yearsWidth > 690){
+							$(this).next().after('<a href="#" class="next-years">' + Drupal.t('Next Years') + '</a>');
+							$('.pressprint .years .next-years').click(function(){
+								$('.pressprint .years .inner-years').animate({left:'0px'});
+								return false;
+							});
+							$(this).next().after('<a href="#" class="prev-years">' + Drupal.t('Prev Years') + '</a>');
+							$('.pressprint .years .prev-years').click(function(){
+								$('.pressprint .years .inner-years').animate({left:'-690px'});
+								return false;
+							});
+							
+						}
+					}
+				});
+			}
+			$('.pressprint h3.year:not(:last)').after('<span class="tratto"> - </span>');
+			$('.pressprint h3.year a').click(function(){
+				$('.pressprint h3.year').removeClass('active');
+				$(this).parent().addClass('active');
+				var linkItem = $('.pressprint h3.year a');
+				var i = linkItem.index($(this));
+				
+				$('.pressprint .view-tab-content').html('').append($('.pressprint .pressroom-list:eq('+i+')').clone());
+				$('.pressprint .view-tab-content .pressroom-list').show();
+				return false;
+			});
+	    }
+	  };
+  
+})(jQuery);
+;/**/
+(function ($) { 
+
+Drupal.behaviors.sliderHP = {
+		    attach: function (context, settings) {
+		      $('#block-slider-hp-slider-hp:not(.processed)').addClass('processed').each(function(){
+		        $('#block-slider-hp-slider-hp .cont_imgs img:first,#block-slider-hp-slider-hp .paging a:first').addClass('active');
+		        Drupal.settings.slideHP = {};
+		        Drupal.settings.slideHP.timeout = setInterval(function(){Drupal.sliderHpNext()},10000);
+		        $('#block-slider-hp-slider-hp .paging a').click(function(){
+		        	clearInterval(Drupal.settings.slideHP.timeout);
+		            Drupal.settings.slideHP.timeout = setInterval(function(){Drupal.sliderHpNext()},10000);
+		         var active = $('#block-slider-hp-slider-hp .paging a').index($(this));
+		          Drupal.sliderHpGoTo(active);
+		          return false;
+		        });
+		      });
+		    }
+		  };
+                  
+Drupal.behaviors.externallink = {
+      
+	    attach: function (context, settings) { 
+          jQuery(document).ready(function(){
+            jQuery('body').on('click', "a.external-link", function(){
+            //jQuery("a.external-link").click(function(){
+                
+                var href = this.href;
+                
+                jQuery('#links-disclaimer .button-clear').on("click", function () {
+                    jQuery("#links-disclaimer-wrapper").colorbox.close();     
+                });
+                jQuery('#links-disclaimer .button-ok').on("click", function () {
+                    
+                    jQuery("#links-disclaimer-wrapper").colorbox.close();   
+                    //window.location.href = href;
+                    window.open(href,'_newtab');
+					
+                    
+                });
+                
+                jQuery.colorbox({
+						href:'#links-disclaimer', 
+						inline:true, 
+						overlayClose: false, 
+						escKey:false, 
+						width:550, 
+						height:340, 
+						open: true,
+						onComplete: function () {
+						  jQuery(this).colorbox.resize();
+						}
+					});
+                   jQuery('#cboxClose').remove();
+                return false;
+				
+				
+                
+            });
+          });
+
+	    
+	    }
+}
+ })(jQuery);
+;/**/

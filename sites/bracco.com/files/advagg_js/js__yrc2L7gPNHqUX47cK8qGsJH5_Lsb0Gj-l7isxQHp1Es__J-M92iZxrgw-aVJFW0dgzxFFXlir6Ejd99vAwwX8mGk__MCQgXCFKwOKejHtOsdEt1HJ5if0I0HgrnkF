@@ -1,0 +1,641 @@
+(function ($) {
+  Drupal.behaviors.changeMenuActive = {
+	attach: function (context, settings) {
+		var menu = $('#block-superfish-1');
+		$('li.active,a.active,li.active-trail,a.active-trail',menu).removeClass('active').removeClass('active-trail');
+
+		$('#superfish-1 .tab_menu a:first').addClass('active');
+		if(typeof(Drupal) != 'undefined' && typeof(Drupal.settings) != 'undefined' && typeof(Drupal.settings.braccotrails) != 'undefined' && (typeof(Drupal.settings.braccotrails) == 'object' || typeof(Drupal.settings.braccotrails) == 'array')){
+			for(var id in Drupal.settings.braccotrails){
+				var mlid = Drupal.settings.braccotrails[id];
+
+				var selector = 'li[id^=menu-'+mlid+']';
+				var activeLi = $(selector,menu);
+				activeLi.addClass('active').addClass('active-trail');
+				$('> a',activeLi).addClass('active').addClass('active-trail');
+			}
+		}
+	}
+  };
+  Drupal.behaviors.moveMessagesDiv = {
+	attach: function (context, settings) {
+		$('#block-delta-blocks-messages').insertAfter($('#main-content'));
+		
+    }
+  };
+  Drupal.behaviors.saveBookmarks = {
+    attach: function (context, settings) {
+      $('.preferiti a').addClass('processed').click(function(){
+        if (window.sidebar) { // Mozilla Firefox Bookmark
+          window.sidebar.addPanel(location.href,document.title,"");
+        } else if(window.external) { // IE Favorite
+          window.external.AddFavorite(location.href,document.title); }
+        else if(window.opera && window.print) { // Opera Hotlist
+          this.title=document.title;
+          return true;
+        }
+        return false;
+      });
+    }
+  };
+  Drupal.behaviors.fancybox = {
+    attach: function (context, settings) {
+      if(typeof($.fancybox) == 'function'){
+         $('.lanciomedia a.videolink').each(function(){
+        	 var id = '';
+        	 id = $('.jwplayer-video > div',$(this).next()).attr('id');
+        	 $(this).attr('href', '#'+id);
+        	 $(this).next().remove();
+         });
+         $('.lanciomedia a.videolink').click(function(){
+        	 $(this).addClass('clicked');
+         })
+
+          $('.lanciomedia a:not(.videolink),.lanciomediapage a:not(.videolink)').fancybox({
+          transitionIn : 'elastic',
+          transitionOut : 'elastic',
+          speedIn : 600,
+          speedOut : 200,
+          overlayShow : true,
+          padding : 0,
+          helpers : {
+            media : {}
+          }
+          });
+         
+         $('.lanciomedia a.videolink').fancybox({
+          content : '<div id="mediaspace"></div>',
+          transitionIn : 'elastic',
+          transitionOut : 'elastic',
+          speedIn : 600,
+          speedOut : 200,
+          overlayShow : true,
+          padding : 0,
+          helpers : {
+            media : {}
+          },
+          beforeShow: function() {
+        	  var id = $('.lanciomedia a.videolink.clicked').attr('href').replace("#","");
+              jwplayer('mediaspace').setup(Drupal.settings.jw_player[id]);
+          },
+          afterShow : function (){
+              jwplayer('mediaspace').play();
+          },
+          beforeClose : function (){
+            jwplayer('mediaspace').stop();
+            $('#mediaspace').detach();
+          },
+          afterClose : function (){
+        	  $('.lanciomedia a.clicked').removeClass('clicked');
+          }
+        }); 
+      }
+    }
+  };
+  Drupal.behaviors.gallery = {
+    attach: function (context, settings) {
+      $('.gallery_img').each(function(){
+    	if($(this).parent().hasClass('storia') || $(this).hasClass('foundation')){
+    		return false;
+    	}
+	    $('.prev',this).hide();
+	    if($('#contenitore_gallery').find('a').length == 2){
+	    	$('.next',this).hide();
+	    }
+        $('.prev',this).click(function(){
+          Drupal.galleryPrev('contenitore_gallery',2);
+          if(scatti_gall_img == 0){
+        	  $(this).hide();
+          }
+          $(this).next().show();
+          return false;
+        });
+        $('.next',this).click(function(){
+          Drupal.galleryNext('contenitore_gallery',2);
+          var num_imgs = $('#contenitore_gallery').find('a').length;
+
+          if((scatti_gall_img*2) == num_imgs){
+        	  $(this).hide();
+          }
+          $(this).prev().show();
+          return false;
+        });
+      });
+      if(typeof($.fancybox) == 'function'){
+          $('#contenitore_gallery a.videolink').each(function(){
+         	 var id = '';
+         	 id = $('.jwplayer-video > div',$(this).next()).attr('id');
+         	 $(this).attr('href', '#'+id);
+         	 $(this).next().remove();
+          });
+          $('#contenitore_gallery a').click(function(){
+         	 $(this).addClass('clicked');
+          })
+          
+          $('#contenitore_gallery a:not(.videolink)').fancybox({
+          transitionIn : 'elastic',
+          transitionOut : 'elastic',
+          speedIn : 600,
+          speedOut : 200,
+          overlayShow : true,
+          padding : 0,
+          helpers : {
+            media : {}
+          }
+          });
+          
+          $('#contenitore_gallery a.videolink').fancybox({
+          content : '<div id="mediaspace"></div>',
+          transitionIn : 'elastic',
+          transitionOut : 'elastic',
+          speedIn : 600,
+          speedOut : 200,
+          overlayShow : true,
+          padding : 0,
+          helpers : {
+            media : {}
+          },
+          beforeShow: function() {
+        	  var id = $('.lanciomedia a.videolink.clicked').attr('href').replace("#","");
+              jwplayer('mediaspace').setup(Drupal.settings.jw_player[id]);
+          },
+          afterShow : function (){
+              jwplayer('mediaspace').play();
+          },
+          beforeClose : function (){
+            jwplayer('mediaspace').stop();
+            $('#mediaspace').detach();
+          },
+          afterClose : function (){
+        	  $('.lanciomedia a.videolink.clicked').removeClass('clicked');
+          }
+        }); 
+      }
+    }
+  };
+
+/** GALLERY **/
+var scatti_gall_img = 0;
+
+Drupal.galleryPrev = function(id, elementi)
+{ 
+  var witem = $('#'+id+' div.lanciomedia').eq(0).width();
+
+  if(scatti_gall_img > 0)
+  { scatti_gall_img--;
+    var p = (scatti_gall_img * witem) * (-1);
+    $('#'+id).animate({left:p+"px"}, 500 );
+    
+  }
+}
+
+Drupal.galleryNext = function(id, elementi)
+{
+  var witem = $('#'+id+' div.lanciomedia').eq(0).width();
+  var num_imgs = $('#'+id).find('a').length;
+
+  if(scatti_gall_img < (num_imgs - elementi))
+  { scatti_gall_img++;
+    var p = (scatti_gall_img * witem) * (-1);
+    $('#'+id).animate({left:p+"px"}, 500 );
+    
+  }
+}
+
+
+Drupal.behaviors.superfishPadding = {
+	attach : function(){
+		$('.sf-depth-1 .sf-megamenu').each(function(){
+			var submenu = $(this);
+			var parent = submenu.prev();
+			var parentLeft = parent.offset().left;
+			var parentwidth = parent.width();
+			var width = submenu.width();
+			var menu = submenu.parents('ul:eq(0)');
+			var menuLeft = menu.offset().left;
+			var leftPos = parentLeft-menuLeft-(width/2)-(parentwidth/2);
+			if(leftPos > 0)
+				submenu.css('left',leftPos);
+		});
+//		if(jQuery('#superfish-1 > li.sf-depth-1').length){
+//			Drupal.settaPaddingMenu(580);
+//		}
+	}
+}
+/** Gestisce la larghezza delle singole voci di menu per occupare tutto lo spazio a disposizione **/
+Drupal.settaPaddingMenu = function(max_width)
+{		
+	var tot_space = 810;
+	var space_li = 0;
+
+	if(max_width) tot_space = max_width;
+
+	jQuery('#superfish-1 > li.sf-depth-1').each(function(index) {
+    	space_li += jQuery(this).width() + 15;
+	});
+
+	var padding = (tot_space - space_li) / jQuery('#superfish-1 > li.sf-depth-1').length;
+
+	if(padding > 0){
+		jQuery('#superfish-1 > li.sf-depth-1').each(function(index) {
+	    	jQuery(this).css('width', (jQuery(this).width() + padding) + 'px');
+		});
+	}
+	
+}
+
+Drupal.behaviors.blocksearchcommon = {
+	    attach: function (context, settings) {
+	    	
+	    	$("#search-block-form input[type='text']").focus(function(){
+	    		if($(this).val() == 'Search' || $(this).val() == 'Cerca')
+	    			$(this).val("");
+	    	});
+	    	
+	    
+	    }
+}
+
+  Drupal.behaviors.regionParentHeight = {
+    attach: function (context, settings) {
+      $('#region-sidebar-first').each(function(){
+          if($('#region-content').length){
+            if(($('#region-sidebar-first').height()+$('#region-sidebar-first').offset().top) < $('#region-content').offset().top){
+              $('#region-content').addClass('prefix-2');
+            }
+          }
+      });
+      $('.parent-height').each(function(){
+//        $(this).height($(this).parent().height());
+      });
+    }
+  }; 
+
+	Drupal.behaviors.pressroomTabs = {
+		attach: function (context, settings) {
+			
+			$('.pressprint .view-content .years .inner-years').append($('.pressprint h3.year'));
+			$('.pressprint .view-content .years .inner-years').append('<div class="clear"></div>');
+			$('.pressprint .view-tab-content').html('').append($('.pressprint .pressroom-list:eq(0)').clone());
+			$('.pressprint .view-tab-content .pressroom-list').show();
+			$('.pressprint h3.year:eq(0)').addClass('active');
+			var yearsWidth = 0;
+			var totalYearsWidth = 0;
+			$('.pressprint h3.year').each(function(){
+				totalYearsWidth = totalYearsWidth+$(this).width()+$(this).next().width();
+			});
+			if(totalYearsWidth > 790){
+				$('.pressprint h3.year').each(function(){
+					if($('.pressprint .next-years').length == 0){
+						var w = $(this).width()+$(this).next().width();
+						yearsWidth = yearsWidth+w;
+						if(yearsWidth > 690){
+							$(this).next().after('<a href="#" class="next-years">' + Drupal.t('Next Years') + '</a>');
+							$('.pressprint .years .next-years').click(function(){
+								$('.pressprint .years .inner-years').animate({left:'0px'});
+								return false;
+							});
+							$(this).next().after('<a href="#" class="prev-years">' + Drupal.t('Prev Years') + '</a>');
+							$('.pressprint .years .prev-years').click(function(){
+								$('.pressprint .years .inner-years').animate({left:'-690px'});
+								return false;
+							});
+							
+						}
+					}
+				});
+			}
+			$('.pressprint h3.year:not(:last)').after('<span class="tratto"> - </span>');
+			$('.pressprint h3.year a').click(function(){
+				$('.pressprint h3.year').removeClass('active');
+				$(this).parent().addClass('active');
+				var linkItem = $('.pressprint h3.year a');
+				var i = linkItem.index($(this));
+				
+				$('.pressprint .view-tab-content').html('').append($('.pressprint .pressroom-list:eq('+i+')').clone());
+				$('.pressprint .view-tab-content .pressroom-list').show();
+				return false;
+			});
+	    }
+	  };
+  
+})(jQuery);
+;/**/
+(function ($) { 
+
+Drupal.behaviors.sliderHP = {
+		    attach: function (context, settings) {
+		      $('#block-slider-hp-slider-hp:not(.processed)').addClass('processed').each(function(){
+		        $('#block-slider-hp-slider-hp .cont_imgs img:first,#block-slider-hp-slider-hp .paging a:first').addClass('active');
+		        Drupal.settings.slideHP = {};
+		        Drupal.settings.slideHP.timeout = setInterval(function(){Drupal.sliderHpNext()},10000);
+		        $('#block-slider-hp-slider-hp .paging a').click(function(){
+		        	clearInterval(Drupal.settings.slideHP.timeout);
+		            Drupal.settings.slideHP.timeout = setInterval(function(){Drupal.sliderHpNext()},10000);
+		         var active = $('#block-slider-hp-slider-hp .paging a').index($(this));
+		          Drupal.sliderHpGoTo(active);
+		          return false;
+		        });
+		      });
+		    }
+		  };
+                  
+Drupal.behaviors.externallink = {
+      
+	    attach: function (context, settings) { 
+          jQuery(document).ready(function(){
+            jQuery('body').on('click', "a.external-link", function(){
+            //jQuery("a.external-link").click(function(){
+                
+                var href = this.href;
+                
+                jQuery('#links-disclaimer .button-clear').on("click", function () {
+                    jQuery("#links-disclaimer-wrapper").colorbox.close();     
+                });
+                jQuery('#links-disclaimer .button-ok').on("click", function () {
+                    
+                    jQuery("#links-disclaimer-wrapper").colorbox.close();   
+                    //window.location.href = href;
+                    window.open(href,'_newtab');
+					
+                    
+                });
+                
+                jQuery.colorbox({
+						href:'#links-disclaimer', 
+						inline:true, 
+						overlayClose: false, 
+						escKey:false, 
+						width:550, 
+						height:340, 
+						open: true,
+						onComplete: function () {
+						  jQuery(this).colorbox.resize();
+						}
+					});
+                   jQuery('#cboxClose').remove();
+                return false;
+				
+				
+                
+            });
+          });
+
+	    
+	    }
+}
+ })(jQuery);
+;/**/
+/*
+  Formalize - version 1.1
+
+  Note: This file depends on the jQuery library.
+*/
+
+// Module pattern:
+// http://yuiblog.com/blog/2007/06/12/module-pattern
+var FORMALIZE = (function($, window, document, undefined) {
+  // Private constants.
+  var PLACEHOLDER_SUPPORTED = 'placeholder' in document.createElement('input');
+  var AUTOFOCUS_SUPPORTED = 'autofocus' in document.createElement('input');
+  var IE6 = !!($.browser.msie && parseInt($.browser.version, 10) === 6);
+  var IE7 = !!($.browser.msie && parseInt($.browser.version, 10) === 7);
+
+  // Expose innards of FORMALIZE.
+  return {
+    // FORMALIZE.go
+    go: function() {
+      for (var i in FORMALIZE.init) {
+        FORMALIZE.init[i]();
+      }
+    },
+    // FORMALIZE.init
+    init: {
+      // FORMALIZE.init.ie6_skin_inputs
+      ie6_skin_inputs: function() {
+        // Test for Internet Explorer 6.
+        if (!IE6 || !$('input, select, textarea').length) {
+          // Exit if the browser is not IE6,
+          // or if no form elements exist.
+          return;
+        }
+
+        // For <input type="submit" />, etc.
+        var button_regex = /button|submit|reset/;
+
+        // For <input type="text" />, etc.
+        var type_regex = /date|datetime|datetime-local|email|month|number|password|range|search|tel|text|time|url|week/;
+
+        $('input').each(function() {
+          var el = $(this);
+
+          // Is it a button?
+          if (this.getAttribute('type').match(button_regex)) {
+            el.addClass('ie6-button');
+
+            /* Is it disabled? */
+            if (this.disabled) {
+              el.addClass('ie6-button-disabled');
+            }
+          }
+          // Or is it a textual input?
+          else if (this.getAttribute('type').match(type_regex)) {
+            el.addClass('ie6-input');
+
+            /* Is it disabled? */
+            if (this.disabled) {
+              el.addClass('ie6-input-disabled');
+            }
+          }
+        });
+
+        $('textarea, select').each(function() {
+          /* Is it disabled? */
+          if (this.disabled) {
+            $(this).addClass('ie6-input-disabled');
+          }
+        });
+      },
+      // FORMALIZE.init.autofocus
+      autofocus: function() {
+        if (AUTOFOCUS_SUPPORTED || !$(':input[autofocus]').length) {
+          return;
+        }
+
+        $(':input[autofocus]:visible:first').focus();
+      },
+      // FORMALIZE.init.placeholder
+      placeholder: function() {
+        if (PLACEHOLDER_SUPPORTED || !$(':input[placeholder]').length) {
+          // Exit if placeholder is supported natively,
+          // or if page does not have any placeholder.
+          return;
+        }
+
+        FORMALIZE.misc.add_placeholder();
+
+        $(':input[placeholder]').each(function() {
+          var el = $(this);
+          var text = el.attr('placeholder');
+
+          el.focus(function() {
+            if (el.val() === text) {
+              el.val('').removeClass('placeholder-text');
+            }
+          }).blur(function() {
+            FORMALIZE.misc.add_placeholder();
+          });
+
+          // Prevent <form> from accidentally
+          // submitting the placeholder text.
+          el.closest('form').submit(function() {
+            if (el.val() === text) {
+              el.val('').removeClass('placeholder-text');
+            }
+          }).bind('reset', function() {
+            setTimeout(FORMALIZE.misc.add_placeholder, 50);
+          });
+        });
+      }
+    },
+    // FORMALIZE.misc
+    misc: {
+      // FORMALIZE.misc.add_placeholder
+      add_placeholder: function() {
+        if (PLACEHOLDER_SUPPORTED || !$(':input[placeholder]').length) {
+          // Exit if placeholder is supported natively,
+          // or if page does not have any placeholder.
+          return;
+        }
+
+        $(':input[placeholder]').each(function() {
+          var el = $(this);
+          var text = el.attr('placeholder');
+
+          if (!el.val() || el.val() === text) {
+            el.val(text).addClass('placeholder-text');
+          }
+        });
+      }
+    }
+  };
+// Alias jQuery, window, document.
+})(jQuery, this, this.document);
+
+// Automatically calls all functions in FORMALIZE.init
+jQuery(document).ready(function() {
+  FORMALIZE.go();
+});;/**/
+/**
+ * @todo
+ */
+
+Drupal.omega = Drupal.omega || {};
+
+(function($) {
+  /**
+   * @todo
+   */
+  var current;
+  var previous;
+  
+  /**
+   * @todo
+   */
+  var setCurrentLayout = function (index) {
+    index = parseInt(index);
+    previous = current;
+    current = Drupal.settings.omega.layouts.order.hasOwnProperty(index) ? Drupal.settings.omega.layouts.order[index] : 'mobile';
+
+    if (previous != current) {      
+      $('body').removeClass('responsive-layout-' + previous).addClass('responsive-layout-' + current);      
+      $.event.trigger('responsivelayout', {from: previous, to: current});
+    }
+  };
+  
+  /**
+   * @todo
+   */
+  Drupal.omega.getCurrentLayout = function () {
+    return current;
+  };
+  
+  /**
+   * @todo
+   */
+  Drupal.omega.getPreviousLayout = function () {
+    return previous;
+  };
+  
+  /**
+   * @todo
+   */
+  Drupal.omega.crappyBrowser = function () {
+    return $.browser.msie && parseInt($.browser.version, 10) < 9;
+  };
+  
+  /**
+   * @todo
+   */
+  Drupal.omega.checkLayout = function (layout) {
+    if (Drupal.settings.omega.layouts.queries.hasOwnProperty(layout) && Drupal.settings.omega.layouts.queries[layout]) {
+      var output = Drupal.omega.checkQuery(Drupal.settings.omega.layouts.queries[layout]);
+      
+      if (!output && layout == Drupal.settings.omega.layouts.primary) {
+        var dummy = $('<div id="omega-check-query"></div>').prependTo('body');       
+
+        dummy.append('<style media="all">#omega-check-query { position: relative; z-index: -1; }</style>');
+        dummy.append('<!--[if (lt IE 9)&(!IEMobile)]><style media="all">#omega-check-query { z-index: 100; }</style><![endif]-->');
+        
+        output = parseInt(dummy.css('z-index')) == 100;
+
+        dummy.remove();
+      }
+      
+      return output;
+    }
+
+    return false;
+  };
+  
+  /**
+   * @todo
+   */
+  Drupal.omega.checkQuery = function (query) {
+    var dummy = $('<div id="omega-check-query"></div>').prependTo('body');       
+    
+    dummy.append('<style media="all">#omega-check-query { position: relative; z-index: -1; }</style>');
+    dummy.append('<style media="' + query + '">#omega-check-query { z-index: 100; }</style>');
+
+    var output = parseInt(dummy.css('z-index')) == 100;
+    
+    dummy.remove();
+
+    return output;
+  };
+  
+  /**
+   * @todo
+   */
+  Drupal.behaviors.omegaMediaQueries = {
+    attach: function (context) {
+      $('body', context).once('omega-mediaqueries', function () {
+        var primary = $.inArray(Drupal.settings.omega.layouts.primary, Drupal.settings.omega.layouts.order);
+        var dummy = $('<div id="omega-media-query-dummy"></div>').prependTo('body');
+
+        dummy.append('<style media="all">#omega-media-query-dummy { position: relative; z-index: -1; }</style>');
+        dummy.append('<!--[if (lt IE 9)&(!IEMobile)]><style media="all">#omega-media-query-dummy { z-index: ' + primary + '; }</style><![endif]-->');
+
+        for (var i in Drupal.settings.omega.layouts.order) {
+          dummy.append('<style media="' + Drupal.settings.omega.layouts.queries[Drupal.settings.omega.layouts.order[i]] + '">#omega-media-query-dummy { z-index: ' + i + '; }</style>');
+        }
+
+        $(window).bind('resize.omegamediaqueries', function () {
+          setCurrentLayout(dummy.css('z-index'));
+        }).load(function () {
+          $(this).trigger('resize.omegamediaqueries');
+        });
+      });
+    }
+  };
+})(jQuery);;/**/
